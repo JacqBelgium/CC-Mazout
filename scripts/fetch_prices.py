@@ -98,7 +98,7 @@ def main() -> None:
     ho_eur_per_liter = (ho / eur_usd) / GALLON_TO_LITER
     fod_vanaf_2000, fod_onder_2000 = fetch_fod_prices()
 
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(os.environ["DATABASE_URL"].strip())
     try:
         with conn, conn.cursor() as cur:
             cur.execute(

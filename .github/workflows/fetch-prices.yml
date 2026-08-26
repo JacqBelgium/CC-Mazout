@@ -34,7 +34,8 @@ jobs:
         if: github.event.inputs.job == 'apply_schema'
         run: |
           sudo apt-get update && sudo apt-get install -y postgresql-client
-          psql "${{ secrets.DATABASE_URL_UNPOOLED }}" -f sql/schema.sql
+          DB_URL=$(printf '%s' "${{ secrets.DATABASE_URL_UNPOOLED }}" | tr -d '\n\r')
+          psql "$DB_URL" -f sql/schema.sql
 
       - name: Dagelijkse prijzen ophalen
         if: github.event_name == 'schedule' || github.event.inputs.job == 'daily' || github.event.inputs.job == ''

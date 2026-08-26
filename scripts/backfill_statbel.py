@@ -67,7 +67,7 @@ def main() -> None:
 
     print(f"[backfill_statbel] {len(by_date)} dagen gevonden, wegschrijven naar Postgres...")
 
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = psycopg2.connect(os.environ["DATABASE_URL"].strip())
     try:
         with conn, conn.cursor() as cur:
             for date_str, prices in sorted(by_date.items()):
