@@ -1,0 +1,43 @@
+name: Prijzen ophalen
+
+on:
+  schedule:
+    # 19:00 UTC = ±21:00 Belgische tijd, na CME-settlement (±20:30 BE-tijd).
+    # Let op: vaste UTC-tijd, dus rond de wissel zomer/wintertijd schuift het
+    # Belgische lokale moment ~1 uur op — voor dit doel verwaarloosbaar.
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Welke job draaien?"
+        type: choice
+        default: daily
+        options:
+          - daily
+          - backfill_statbel
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installeer dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Dagelijkse prijzen ophalen
+        if: github.event_name == 'schedule' || github.event.inputs.job == 'daily' || github.event.inputs.job == ''
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/fetch_prices.py
+
+      - name: Eenmalige historische backfill (Statbel)
+        if: github.event.inputs.job == 'backfill_statbel'
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+        run: python scripts/backfill_statbel.py
+
