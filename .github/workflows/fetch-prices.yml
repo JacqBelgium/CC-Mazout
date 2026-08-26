@@ -15,6 +15,7 @@ on:
         options:
           - daily
           - backfill_statbel
+          - apply_schema
 
 jobs:
   fetch:
@@ -28,6 +29,12 @@ jobs:
 
       - name: Installeer dependencies
         run: pip install -r scripts/requirements.txt
+
+      - name: Schema toepassen (eenmalig, via unpooled verbinding)
+        if: github.event.inputs.job == 'apply_schema'
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql "${{ secrets.DATABASE_URL_UNPOOLED }}" -f sql/schema.sql
 
       - name: Dagelijkse prijzen ophalen
         if: github.event_name == 'schedule' || github.event.inputs.job == 'daily' || github.event.inputs.job == ''
