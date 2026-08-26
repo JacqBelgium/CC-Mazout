@@ -4,7 +4,7 @@ bestat-crosstable (officiële, downloadbare overheidsdata — incl. de dag van v
 en vult daarmee de `daily_prices`-tabel, VOOR de dagelijkse GitHub Actions-job start.
 
 Gebruik:
-    POSTGRES_URL="postgres://..." python scripts/backfill_statbel.py
+    DATABASE_URL="postgres://..." python scripts/backfill_statbel.py
 
 Bron: https://bestat.statbel.fgov.be/bestat/crosstable.xhtml?view=f8d4c0ce-bec4-4f58-b2a2-4f6b8667ad24
 Exportlink (JSON), rechtstreeks bruikbaar zonder browser:
@@ -67,7 +67,7 @@ def main() -> None:
 
     print(f"[backfill_statbel] {len(by_date)} dagen gevonden, wegschrijven naar Postgres...")
 
-    conn = psycopg2.connect(os.environ["POSTGRES_URL"])
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
         with conn, conn.cursor() as cur:
             for date_str, prices in sorted(by_date.items()):

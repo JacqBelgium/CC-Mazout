@@ -32,12 +32,12 @@ jobs:
       - name: Dagelijkse prijzen ophalen
         if: github.event_name == 'schedule' || github.event.inputs.job == 'daily' || github.event.inputs.job == ''
         env:
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/fetch_prices.py
 
       - name: Eenmalige historische backfill (Statbel)
         if: github.event.inputs.job == 'backfill_statbel'
         env:
-          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/backfill_statbel.py
 

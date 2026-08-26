@@ -9,28 +9,28 @@ app/
   page.jsx              → de dashboard-pagina (client component)
   layout.js             → verplichte root layout (Next.js App Router)
   api/prices/route.js   → leest historiek uit Postgres voor de frontend
-lib/db.js               → databasehelper (@vercel/postgres)
+lib/db.js               → databasehelper (pg)
 scripts/
   fetch_prices.py        → dagelijks ophaalscript (yfinance + FOD-scrape)
   requirements.txt
-sql/schema.sql            → tabeldefinitie voor Vercel Postgres
+sql/schema.sql            → tabeldefinitie voor de Neon-database (via Vercel Storage-integratie)
 .github/workflows/
   fetch-prices.yml         → GitHub Actions-cron die fetch_prices.py dagelijks draait
 ```
 
 ## Opzet — stap voor stap
 
-1. **Vercel Postgres aanmaken**
+1. **Neon-database aanmaken (via Vercel Storage)**
    In het Vercel-dashboard: *Storage → Create Database → Postgres (Neon)*. Koppel de database
-   aan dit project — Vercel zet dan automatisch de `POSTGRES_URL`-omgevingsvariabele.
+   aan dit project — Vercel zet dan automatisch de `DATABASE_URL`-omgevingsvariabele.
 
 2. **Schema toepassen**
-   Voer `sql/schema.sql` uit tegen die database (via de Vercel Postgres-query-editor in het
-   dashboard, of lokaal met `psql "$POSTGRES_URL" -f sql/schema.sql`).
+   Voer `sql/schema.sql` uit tegen die database (via de query-editor in het Vercel Storage-dashboard,
+   of lokaal met `psql "$DATABASE_URL" -f sql/schema.sql`).
 
 3. **GitHub secret instellen**
    In de GitHub-repo: *Settings → Secrets and variables → Actions → New repository secret*,
-   naam `POSTGRES_URL`, waarde = dezelfde connectiestring als in Vercel.
+   naam `DATABASE_URL`, waarde = dezelfde connectiestring als in Vercel.
 
 4. **Eenmalige historische backfill**
    Tabblad *Actions* → workflow "Prijzen ophalen" → *Run workflow* → job `backfill_statbel`

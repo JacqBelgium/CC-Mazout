@@ -123,7 +123,7 @@ Via yfinance (`EURUSD=X`), zelfde package/structuur als de andere marktdata — 
 - [ ] Custom "van–tot" periodeselectie (nu placeholder in prototype) — enige overblijvende punt
 - [x] ~~DNS-locatie mazoutpricetrends.eu~~ — via hostingprovider (niet Cloudflare); niet-gerelateerd
       pickmynumers.eu loopt wel via Cloudflare, historische reden onbekend
-- [x] ~~Historische data-opslag~~ — Vercel Postgres, bevestigd
+- [x] ~~Historische data-opslag~~ — Neon Postgres via Vercel Storage-integratie, bevestigd
 - [x] ~~Juridische check yfinance-gebruiksvoorwaarden~~ — niet van toepassing, gratis/niet-commercieel
 
 Met dit laatste punt is de architectuur volledig bepaald — klaar om de repo op te zetten.
@@ -136,7 +136,7 @@ Met dit laatste punt is de architectuur volledig bepaald — klaar om de repo op
    - Scheduled workflow (`schedule: cron`) in de GitHub-repo, Python-script
    - `yfinance`: `HO=F`, `CL=F` (WTI) of `BZ=F` (Brent), `EURUSD=X`
    - HTML-scrape van `petrolprices.economie.fgov.be` voor de officiële FOD-maximumprijs
-   - Schrijft rechtstreeks naar **Vercel Postgres** via de connectiestring (GitHub secret)
+   - Schrijft rechtstreeks naar **Neon (Postgres)** via de connectiestring (GitHub secret, `DATABASE_URL`)
    - Gepland op 19:00 UTC (~21:00 BE-tijd, na CME-settlement van ±20:30 BE-tijd)
    - Gekozen boven Vercel Cron omdat: geen 10s-timeout (ruimte voor retries bij een 429 van
      Yahoo), en ontkoppeling van data-ingestie en website-hosting. Vercel's outbound IP's zijn
@@ -144,8 +144,10 @@ Met dit laatste punt is de architectuur volledig bepaald — klaar om de repo op
      dus qua IP-rotatie ontlopen beide platformen elkaar niet veel — bij deze lage frequentie
      (1x/dag) is rate-limiting sowieso een klein risico.
 
-2. **Historische opslag — Vercel Postgres (Neon, gratis tier)**, bevestigd. Native geïntegreerd
-   in het Vercel-dashboard, door GitHub Actions gevuld, door de website uitgelezen.
+2. **Historische opslag — Neon Postgres (gratis tier)**, bevestigd. Ontsloten via Vercel's
+   Storage-integratie (voorheen "Vercel Postgres", nu een Marketplace-integratie met Neon).
+   Omgevingsvariabele heet `DATABASE_URL`, niet `POSTGRES_URL`. Database wordt door GitHub
+   Actions gevuld en door de website uitgelezen.
 
 3. **Frontend:** Next.js, herbruikt de structuur/styling van `mazout_dashboard.jsx`, haalt data
    op via een eigen `/api`-leesroute (geen directe yfinance-call vanuit de browser).
