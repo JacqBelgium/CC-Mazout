@@ -40,21 +40,27 @@ function buildMockHistory(days) {
   return out;
 }
 
-function useHistory(days) {
+function useHistory(range) {
   const [state, setState] = useState({ rows: [], loading: true, isMock: false });
 
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
 
-    fetch(`/api/prices?days=${days}`)
+    const isCustom = typeof range === "object" && range?.from && range?.to;
+    const url = isCustom
+      ? `/api/prices?from=${range.from}&to=${range.to}`
+      : `/api/prices?days=${range}`;
+
+    fetch(url)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (!data.rows || data.rows.length < 2) {
           // Nog geen (voldoende) historiek — val terug op voorbeelddata zodat
           // de pagina bruikbaar blijft vóór de eerste ingestie-runs.
-          setState({ rows: buildMockHistory(days), loading: false, isMock: true });
+          const fallbackDays = isCustom ? 30 : range;
+          setState({ rows: buildMockHistory(fallbackDays), loading: false, isMock: true });
           return;
         }
         const rows = data.rows.map((r) => ({
@@ -68,13 +74,14 @@ function useHistory(days) {
         setState({ rows, loading: false, isMock: false });
       })
       .catch(() => {
-        if (!cancelled) setState({ rows: buildMockHistory(days), loading: false, isMock: true });
+        const fallbackDays = isCustom ? 30 : range;
+        if (!cancelled) setState({ rows: buildMockHistory(fallbackDays), loading: false, isMock: true });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [days]);
+  }, [typeof range === "object" ? `${range.from}_${range.to}` : range]);
 
   return state;
 }
@@ -107,11 +114,18 @@ function Delta({ value }) {
 
 export default function MazoutDashboard() {
   const [range, setRange] = useState(30);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [showRaw, setShowRaw] = useState(false);
   const [chartMode, setChartMode] = useState("index");
 
-  const { rows: history, loading, isMock } = useHistory(range === "custom" ? 90 : range);
+  const isCustomMode = typeof range === "object";
+  const { rows: history, loading, isMock } = useHistory(range);
   const indexedHistory = useMemo(() => indexed(history, ["wti", "crude", "max"]), [history]);
+
+  function applyCustomRange() {
+    if (customFrom && customTo) setRange({ from: customFrom, to: customTo });
+  }
 
   const today = history[history.length - 1];
   const yesterday = history[history.length - 2] ?? today;
@@ -197,6 +211,9 @@ export default function MazoutDashboard() {
         .seg button.active { background: var(--board); color: var(--amber); }
         .raw-btn { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
           background: transparent; border: 1px solid var(--hair); border-radius: 6px; padding: 6px 12px; cursor: pointer; color: var(--ink); }
+        .raw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .date-input { font-family: 'IBM Plex Mono', monospace; font-size: 12px; border: 1px solid var(--hair);
+          border-radius: 6px; padding: 5px 8px; background: var(--paper); color: var(--ink); }
         .chart-box { background: var(--paper-2); border: 1px solid var(--hair); border-radius: 8px; padding: 14px 8px 6px; }
         table.raw { width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
         table.raw th, table.raw td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--hair); }
@@ -300,10 +317,31 @@ export default function MazoutDashboard() {
               <div className="seg">
                 <button className={range === 30 ? "active" : ""} onClick={() => setRange(30)}>30D</button>
                 <button className={range === 90 ? "active" : ""} onClick={() => setRange(90)}>90D</button>
+                <button className={isCustomMode ? "active" : ""} onClick={() => { if (!isCustomMode) setRange({ from: customFrom, to: customTo }); }}>Van–tot</button>
               </div>
               <button className="raw-btn" onClick={() => setShowRaw(true)}><Table2 size={13} /> Ruwe data <ChevronDown size={12} /></button>
             </div>
           </div>
+          {isCustomMode && (
+            <div className="controls" style={{ marginBottom: 10 }}>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="date-input"
+              />
+              <span style={{ color: "var(--ink-soft)", fontSize: 13 }}>tot</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="date-input"
+              />
+              <button className="raw-btn" onClick={applyCustomRange} disabled={!customFrom || !customTo}>
+                Toepassen
+              </button>
+            </div>
+          )}
           <div className="controls" style={{ marginBottom: 10 }}>
             <div className="seg">
               <button className={chartMode === "index" ? "active" : ""} onClick={() => setChartMode("index")}>Beweging t.o.v. elkaar (%)</button>
