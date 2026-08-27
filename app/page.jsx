@@ -116,6 +116,7 @@ export default function MazoutDashboard() {
   const [range, setRange] = useState(30);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [chartMode, setChartMode] = useState("index");
 
@@ -315,14 +316,14 @@ export default function MazoutDashboard() {
             <span className="section-title">Prijstrend</span>
             <div className="controls">
               <div className="seg">
-                <button className={range === 30 ? "active" : ""} onClick={() => setRange(30)}>30D</button>
-                <button className={range === 90 ? "active" : ""} onClick={() => setRange(90)}>90D</button>
-                <button className={isCustomMode ? "active" : ""} onClick={() => { if (!isCustomMode) setRange({ from: customFrom, to: customTo }); }}>Van–tot</button>
+                <button className={range === 30 ? "active" : ""} onClick={() => { setShowCustomPicker(false); setRange(30); }}>30D</button>
+                <button className={range === 90 ? "active" : ""} onClick={() => { setShowCustomPicker(false); setRange(90); }}>90D</button>
+                <button className={isCustomMode || showCustomPicker ? "active" : ""} onClick={() => setShowCustomPicker(true)}>Van–tot</button>
               </div>
               <button className="raw-btn" onClick={() => setShowRaw(true)}><Table2 size={13} /> Ruwe data <ChevronDown size={12} /></button>
             </div>
           </div>
-          {isCustomMode && (
+          {showCustomPicker && (
             <div className="controls" style={{ marginBottom: 10 }}>
               <input
                 type="date"
