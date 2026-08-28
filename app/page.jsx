@@ -58,9 +58,10 @@ function useHistory(range) {
         if (cancelled) return;
         if (!data.rows || data.rows.length < 2) {
           // Nog geen (voldoende) historiek — val terug op voorbeelddata zodat
-          // de pagina bruikbaar blijft vóór de eerste ingestie-runs.
-          const fallbackDays = isCustom ? 30 : range;
-          setState({ rows: buildMockHistory(fallbackDays), loading: false, isMock: true });
+          // de pagina bruikbaar blijft vóór de eerste ingestie-runs, of als een
+          // gekozen periode toevallig geen data bevat. Altijd een vast, geldig
+          // aantal dagen gebruiken — nooit het (mogelijk niet-numerieke) range-object.
+          setState({ rows: buildMockHistory(30), loading: false, isMock: true });
           return;
         }
         const rows = data.rows.map((r) => ({
@@ -74,8 +75,7 @@ function useHistory(range) {
         setState({ rows, loading: false, isMock: false });
       })
       .catch(() => {
-        const fallbackDays = isCustom ? 30 : range;
-        if (!cancelled) setState({ rows: buildMockHistory(fallbackDays), loading: false, isMock: true });
+        if (!cancelled) setState({ rows: buildMockHistory(30), loading: false, isMock: true });
       });
 
     return () => {
@@ -101,10 +101,11 @@ function indexed(history, keys) {
 const fmt = (v) => `€ ${v.toFixed(4)} / L`;
 const fmtShort = (v) => `€${v.toFixed(2)}`;
 
-function Delta({ value }) {
+function Delta({ value, onLight }) {
   const down = value <= 0;
+  const cls = onLight ? (down ? "delta-down-light" : "delta-up-light") : (down ? "delta-down" : "delta-up");
   return (
-    <span className={`delta ${down ? "delta-down" : "delta-up"}`}>
+    <span className={`delta ${cls}`}>
       {down ? <TrendingDown size={14} strokeWidth={2.5} /> : <TrendingUp size={14} strokeWidth={2.5} />}
       {down ? "" : "+"}
       {value.toFixed(4)} €/L
@@ -131,23 +132,30 @@ export default function MazoutDashboard() {
   const today = history[history.length - 1];
   const yesterday = history[history.length - 2] ?? today;
 
+  if (loading || !today) {
+    return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
+  }
+
   // Vaste, bevestigde prijsopbouw (zie opdrachtdocument, §2.2)
-  const productMarkt = 0.9;
-  const distributieMarge = 0.2;
-  const accijnzen = 0.28;
-  const subtotaal = productMarkt + distributieMarge + accijnzen;
-  const btw = subtotaal * 0.21;
+  // Prijsopbouw wordt nu afgeleid van de échte cijfers van vandaag i.p.v. vaste,
+  // verouderde bedragen — het totaal moet altijd exact gelijk zijn aan het bord bovenaan.
+  // Markt-component komt rechtstreeks uit de live HO=F-omrekening (today.crude).
+  // Marge/accijnzen behouden hun onderlinge verhouding (bevestigd, zie opdrachtdocument §2.2),
+  // maar worden herschaald zodat (markt + marge + accijnzen) * 1.21 exact today.max oplevert.
+  const productMarkt = today.crude;
+  const subtotaalExclBtw = today.max / 1.21;
+  const margeEnAccijnzenTotaal = Math.max(subtotaalExclBtw - productMarkt, 0);
+  const MARGE_RATIO = 0.2 / (0.2 + 0.28); // oorspronkelijke verhouding: 0,20 marge / 0,28 accijnzen
+  const distributieMarge = margeEnAccijnzenTotaal * MARGE_RATIO;
+  const accijnzen = margeEnAccijnzenTotaal * (1 - MARGE_RATIO);
+  const btw = today.max - subtotaalExclBtw;
   const breakdown = [
     { label: "Productprijs/markt", value: productMarkt, color: "#8C6A3F" },
     { label: "Distributiemarge", value: distributieMarge, color: "#6E5A8C" },
     { label: "Accijnzen/energieheffing (incl. overige bijdragen)", value: accijnzen, color: "#B4472B" },
     { label: "BTW (21%)", value: btw, color: "#5B6E63" },
   ];
-  const total = breakdown.reduce((s, b) => s + b.value, 0);
-
-  if (loading || !today) {
-    return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
-  }
+  const total = today.max;
 
   const deltaMax = today.max - yesterday.max;
   const deltaCrude = today.crude - yesterday.crude;
@@ -187,6 +195,8 @@ export default function MazoutDashboard() {
           gap: 4px; padding: 3px 8px; border-radius: 20px; }
         .delta-down { color: #9BD6AE; background: rgba(75,123,91,0.18); }
         .delta-up { color: #E8A48C; background: rgba(180,71,43,0.2); }
+        .delta-down-light { color: #2F6B45; background: rgba(75,123,91,0.14); }
+        .delta-up-light { color: #93331A; background: rgba(180,71,43,0.14); }
         .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 26px; }
         @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
         .card { background: var(--paper-2); border: 1px solid var(--hair); border-radius: 8px; padding: 16px 16px 14px; }
@@ -194,6 +204,9 @@ export default function MazoutDashboard() {
         .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; margin: 4px 0 10px; }
         .card-value { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; margin-bottom: 6px; }
         .card-note { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+        .wti-link { display: inline-block; margin-top: 6px; font-size: 12px; font-family: 'IBM Plex Mono', monospace;
+          color: var(--amber-dim); text-decoration: none; border-bottom: 1px dashed var(--amber-dim); }
+        .wti-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
         .section { margin-bottom: 30px; }
         .section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;
           border-bottom: 1px solid var(--hair); padding-bottom: 8px; flex-wrap: wrap; gap: 8px; }
@@ -225,6 +238,8 @@ export default function MazoutDashboard() {
         .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .modal-close { background: none; border: none; cursor: pointer; color: var(--ink-soft); }
         footer { font-size: 11.5px; color: var(--ink-soft); border-top: 1px solid var(--hair); padding-top: 14px; line-height: 1.6; }
+        .footer-link { color: var(--ink-soft); text-decoration: underline; }
+        .footer-link:hover { color: var(--ink); }
       `}</style>
 
       <div className="container">
@@ -272,18 +287,26 @@ export default function MazoutDashboard() {
             <div className="card-num">01 — markt</div>
             <div className="card-title">Marktprijs (HO=F, omgerekend)</div>
             <div className="card-value">{fmt(today.crude)}</div>
-            <Delta value={deltaCrude} />
+            <Delta value={deltaCrude} onLight />
           </div>
           <div className="card">
             <div className="card-num">02 — officieel</div>
             <div className="card-title">Maximumprijs (FOD/SPF Finance)</div>
             <div className="card-value">{fmt(today.max)}</div>
-            <Delta value={deltaMax} />
+            <Delta value={deltaMax} onLight />
           </div>
           <div className="card">
             <div className="card-num">03 — WTI</div>
             <div className="card-title">Ruwe olie (WTI)</div>
             <div className="card-value">€{today.wti ? today.wti.toFixed(2) : "—"}<span style={{fontSize:12}}> USD/vat</span></div>
+            <a
+              href="https://www.usmarkets.nl/koersen/wti-olie"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="wti-link"
+            >
+              Volg de WTI-koers →
+            </a>
           </div>
         </div>
 
@@ -367,6 +390,13 @@ export default function MazoutDashboard() {
         <footer>
           "Mazout" is het Belgische woord voor stookolie. Data ververst dagelijks via een
           GitHub Actions-job (yfinance + FOD Economie).
+          <br /><br />
+          Website is ontwikkeld en wordt ter beschikking gesteld door{" "}
+          <a href="https://vandersteen.be" target="_blank" rel="noopener noreferrer" className="footer-link">
+            vandersteen.be
+          </a>
+          . Contact:{" "}
+          <a href="mailto:jacq@vandersteen.be" className="footer-link">jacq@vandersteen.be</a>
         </footer>
       </div>
 
