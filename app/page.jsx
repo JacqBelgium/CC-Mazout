@@ -136,7 +136,6 @@ export default function MazoutDashboard() {
     return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
   }
 
-  // Vaste, bevestigde prijsopbouw (zie opdrachtdocument, §2.2)
   // Prijsopbouw wordt nu afgeleid van de échte cijfers van vandaag i.p.v. vaste,
   // verouderde bedragen — het totaal moet altijd exact gelijk zijn aan het bord bovenaan.
   // Markt-component komt rechtstreeks uit de live HO=F-omrekening (today.crude).
