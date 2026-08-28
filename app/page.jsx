@@ -189,7 +189,7 @@ export default function MazoutDashboard() {
           color: var(--amber); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; line-height: 1;
           display: flex; align-items: baseline; gap: 8px; }
         .board-digits .unit { font-size: 0.32em; color: #B99A55; font-weight: 500; }
-        .board-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px; }
+        .board-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px; font-size: 13px; }
         .delta { font-family: 'IBM Plex Mono', monospace; font-size: 13px; display: inline-flex; align-items: center;
           gap: 4px; padding: 3px 8px; border-radius: 20px; }
         .delta-down { color: #9BD6AE; background: rgba(75,123,91,0.18); }
@@ -247,7 +247,7 @@ export default function MazoutDashboard() {
           <span>{new Date(today.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
         </div>
 
-        <h1>Belgische <span className="quote">"mazout"</span>prijzen &amp; trends</h1>
+        <h1>Belgische <span className="quote">"mazout"</span> prijzen &amp; trends</h1>
         <p className="subtitle">
           Officiële maximumprijs per dag volgens FOD Financiën, met een onafhankelijke
           inschatting op basis van de internationale stookoliemarkt.
