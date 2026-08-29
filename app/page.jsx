@@ -67,8 +67,8 @@ function useHistory(range) {
         const rows = data.rows.map((r) => ({
           date: r.date,
           label: new Date(r.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit" }),
-          crude: Number(r.market_eur_l),
-          wti: Number(r.wti_usd_bbl),
+          crude: r.market_eur_l != null ? Number(r.market_eur_l) : null,
+          wti: r.wti_usd_bbl != null ? Number(r.wti_usd_bbl) : null,
           max: Number(r.fod_max_vanaf2000_l),
           maxOnder2000: r.fod_max_onder2000_l != null ? Number(r.fod_max_onder2000_l) : null,
         }));
