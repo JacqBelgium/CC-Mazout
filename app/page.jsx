@@ -88,11 +88,20 @@ function useHistory(range) {
 
 function indexed(history, keys) {
   if (history.length === 0) return [];
-  const base = history[0];
+  // Per reeks apart de eerste dag mét een geldige waarde als 100%-basis nemen,
+  // i.p.v. blind history[0] — die dag kan voor een specifieke kolom nog leeg zijn
+  // (bv. markt/WTI-data die pas later is aangevuld).
+  const bases = {};
+  keys.forEach((k) => {
+    const firstValid = history.find((row) => row[k] != null && !Number.isNaN(row[k]));
+    bases[k] = firstValid ? firstValid[k] : null;
+  });
   return history.map((row) => {
     const out = { label: row.label };
     keys.forEach((k) => {
-      out[k] = base[k] ? +((row[k] / base[k]) * 100).toFixed(2) : null;
+      const base = bases[k];
+      const val = row[k];
+      out[k] = base && val != null ? +((val / base) * 100).toFixed(2) : null;
     });
     return out;
   });
@@ -378,9 +387,9 @@ export default function MazoutDashboard() {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#57544A" }} interval={Math.floor(history.length / 6)} axisLine={{ stroke: "#C9C2AC" }} tickLine={false} />
                 <YAxis tickFormatter={chartMode === "level" ? fmtShort : (v) => `${v}`} tick={{ fontSize: 11, fill: "#57544A" }} axisLine={false} tickLine={false} width={50} />
                 <Tooltip formatter={(v, name) => [chartMode === "level" ? fmt(v) : `${v} (basis 100)`, name]} contentStyle={{ background: "#1C1A16", border: "none", borderRadius: 6 }} itemStyle={{ fontSize: 12, color: "#E9E4D6" }} />
-                <Line type="monotone" dataKey="max" name="FOD maximumprijs" stroke="#B4472B" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="crude" name="HO=F (markt)" stroke="#5B6E63" strokeWidth={1.5} dot={false} />
-                {chartMode === "index" && <Line type="monotone" dataKey="wti" name="Ruwe olie (WTI)" stroke="#F0A93B" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />}
+                <Line type="monotone" dataKey="max" name="FOD maximumprijs" stroke="#B4472B" strokeWidth={2} dot={false} connectNulls />
+                <Line type="monotone" dataKey="crude" name="HO=F (markt)" stroke="#5B6E63" strokeWidth={1.5} dot={false} connectNulls />
+                {chartMode === "index" && <Line type="monotone" dataKey="wti" name="Ruwe olie (WTI)" stroke="#F0A93B" strokeWidth={1.5} dot={false} strokeDasharray="4 3" connectNulls />}
               </LineChart>
             </ResponsiveContainer>
           </div>
