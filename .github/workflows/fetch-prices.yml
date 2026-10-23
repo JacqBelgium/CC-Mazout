@@ -62,6 +62,7 @@ jobs:
 
       - name: Houd workflow actief (reset 60-dagen-inactiviteitsregel)
         if: github.event_name == 'schedule'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow enable "${{ github.workflow }}" --repo "${{ github.repository }}"
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/fetch-prices.yml/enable"
