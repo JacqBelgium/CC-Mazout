@@ -322,7 +322,7 @@ export default function MazoutDashboard() {
           text-transform: uppercase; color: var(--ink-soft); border-bottom: 1px solid var(--hair);
           padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
         h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(28px, 4.2vw, 40px);
-          letter-spacing: -0.01em; margin: 0 0 8px; }
+          letter-spacing: -0.01em; margin: 0 0 8px; text-align: center; text-wrap: balance; }
         h1 .quote { color: var(--amber-dim); }
         .lead-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; line-height: 1.35;
           color: var(--ink); text-align: center; text-wrap: balance; max-width: 560px; margin: 4px auto 6px; }
