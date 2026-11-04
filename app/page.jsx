@@ -2,9 +2,60 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { TrendingDown, TrendingUp, ChevronDown, Table2, X } from "lucide-react";
+import { TrendingDown, TrendingUp, ChevronDown, Table2, X, ArrowDown, ArrowUp, ArrowRight } from "lucide-react";
 
 const GALLON_TO_LITER = 3.785411784;
+
+// ---------------------------------------------------------------------------
+// Datums: alles als 'YYYY-MM-DD'-kalenderdatum, met "vandaag" in Europe/Brussels —
+// los van de tijdzone van de browser of van de server.
+// ---------------------------------------------------------------------------
+function brusselsToday(now = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Brussels", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now);
+}
+
+function addDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+const fmtIso = (iso, opts) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("nl-BE", { ...opts, timeZone: "UTC" });
+
+// "Vandaag" = de rij van vandaag, of anders de laatste rij ervóór (rijen zijn oplopend
+// gesorteerd en uniek per datum, dus de laatste rij <= vandaag ís de rij van vandaag als
+// die bestaat). "Morgen" = de rij van vandaag + 1, enkel als FOD die prijs al publiceerde.
+function splitDays(history, todayIso) {
+  let todayIdx = -1;
+  history.forEach((row, i) => {
+    if (row.date <= todayIso) todayIdx = i;
+  });
+  const tomorrowIso = addDays(todayIso, 1);
+  const tomorrow = history.find((row) => row.date === tomorrowIso && row.max != null) ?? null;
+  return { todayIdx, tomorrow };
+}
+
+// Laatste niet-lege waarde van `key` op of vóór index `upTo`, plus de waarde daarvoor
+// (voor de delta). Marktdata ontbreekt op weekends/feestdagen (geen slotkoers) — dan
+// tonen we de laatst bekende i.p.v. een nul.
+function lastKnown(rows, upTo, key) {
+  const found = [];
+  for (let i = upTo; i >= 0 && found.length < 2; i--) {
+    if (rows[i][key] != null) found.push(rows[i][key]);
+  }
+  return { value: found[0] ?? null, prev: found[1] ?? found[0] ?? null };
+}
+
+// Verschil kleiner dan een halve tiende cent per liter = "gelijk".
+const SAME_THRESHOLD = 0.0005;
+
+function tariffChange(todayVal, tomorrowVal) {
+  if (todayVal == null || tomorrowVal == null) return null;
+  const diff = tomorrowVal - todayVal;
+  return { per1000: diff * 1000, dir: Math.abs(diff) < SAME_THRESHOLD ? "same" : diff < 0 ? "down" : "up" };
+}
 
 // ---------------------------------------------------------------------------
 // Fallback mock data — enkel gebruikt zolang de GitHub Actions-job nog geen
@@ -64,14 +115,19 @@ function useHistory(range) {
           setState({ rows: buildMockHistory(30), loading: false, isMock: true });
           return;
         }
-        const rows = data.rows.map((r) => ({
-          date: r.date,
-          label: new Date(r.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit" }),
-          crude: r.market_eur_l != null ? Number(r.market_eur_l) : null,
-          wti: r.wti_usd_bbl != null ? Number(r.wti_usd_bbl) : null,
-          max: Number(r.fod_max_vanaf2000_l),
-          maxOnder2000: r.fod_max_onder2000_l != null ? Number(r.fod_max_onder2000_l) : null,
-        }));
+        const rows = data.rows.map((r) => {
+          // pg levert DATE als middernacht-timestamp ("2026-11-05T00:00:00.000Z") —
+          // enkel de kalenderdatum gebruiken, nooit omrekenen naar een lokale tijdzone.
+          const date = String(r.date).slice(0, 10);
+          return {
+            date,
+            label: `${date.slice(8, 10)}/${date.slice(5, 7)}`,
+            crude: r.market_eur_l != null ? Number(r.market_eur_l) : null,
+            wti: r.wti_usd_bbl != null ? Number(r.wti_usd_bbl) : null,
+            max: r.fod_max_vanaf2000_l != null ? Number(r.fod_max_vanaf2000_l) : null,
+            maxOnder2000: r.fod_max_onder2000_l != null ? Number(r.fod_max_onder2000_l) : null,
+          };
+        });
         setState({ rows, loading: false, isMock: false });
       })
       .catch(() => {
@@ -107,10 +163,12 @@ function indexed(history, keys) {
   });
 }
 
-const fmt = (v) => `€ ${v.toFixed(4)} / L`;
+const fmt = (v) => (v == null ? "—" : `€ ${v.toFixed(4)} / L`);
 const fmtShort = (v) => `€${v.toFixed(2)}`;
+const fmtEuro2 = (v) => v.toLocaleString("nl-BE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function Delta({ value, onLight }) {
+  if (value == null || Number.isNaN(value)) return null;
   const down = value <= 0;
   const cls = onLight ? (down ? "delta-down-light" : "delta-up-light") : (down ? "delta-down" : "delta-up");
   return (
@@ -119,6 +177,72 @@ function Delta({ value, onLight }) {
       {down ? "" : "+"}
       {value.toFixed(4)} €/L
     </span>
+  );
+}
+
+const TOMORROW_TITLES = {
+  down: "De mazoutprijs daalt morgen!",
+  up: "De mazoutprijs stijgt morgen!",
+  same: "De mazoutprijs blijft morgen gelijk.",
+  mixed: "De mazoutprijs verandert morgen",
+};
+const DIR_ICONS = { down: ArrowDown, up: ArrowUp, same: ArrowRight };
+
+function changeText(per1000) {
+  const rounded = Math.round(Math.abs(per1000) * 100) / 100;
+  if (rounded === 0) return "geen verschil";
+  return per1000 < 0 ? `−${fmtEuro2(rounded)} € minder` : `+${fmtEuro2(rounded)} € meer`;
+}
+
+// Blok "morgen": vergelijkt het FOD-tarief van morgen met dat van vandaag, per tarief.
+function TomorrowBlock({ todayMax, todayOnder2000, tomorrow }) {
+  const changes = tomorrow
+    ? [
+        { label: "≥ 2000 l", change: tariffChange(todayMax, tomorrow.max) },
+        { label: "< 2000 l", change: tariffChange(todayOnder2000, tomorrow.maxOnder2000) },
+      ].filter((c) => c.change)
+    : [];
+
+  if (changes.length === 0) {
+    return (
+      <div className="tomorrow t-neutral">
+        <p className="tomorrow-unknown">De prijs van morgen is nog niet bekend.</p>
+      </div>
+    );
+  }
+
+  const dirs = new Set(changes.map((c) => c.change.dir));
+  const overall = dirs.size === 1 ? [...dirs][0] : "mixed";
+  const MainIcon = DIR_ICONS[overall];
+
+  return (
+    <div className={`tomorrow t-${overall}`}>
+      {MainIcon && (
+        <div className="tomorrow-icon" aria-hidden="true">
+          <MainIcon size={30} strokeWidth={2.75} />
+        </div>
+      )}
+      <div className="tomorrow-body">
+        <p className="tomorrow-title">{TOMORROW_TITLES[overall]}</p>
+        <p className="tomorrow-when">
+          {overall === "same" ? "Het tarief van morgen" : "De wijziging"} geldt vanaf morgen,{" "}
+          {fmtIso(tomorrow.date, { day: "numeric", month: "long", year: "numeric" })}.
+        </p>
+        <ul className="tomorrow-lines">
+          {changes.map(({ label, change }) => {
+            // Bij tarieven met een verschillende richting krijgt elke regel een eigen pijl.
+            const LineIcon = overall === "mixed" ? DIR_ICONS[change.dir] : null;
+            return (
+              <li key={label} className={overall === "mixed" ? `t-${change.dir}` : undefined}>
+                {LineIcon && <LineIcon size={16} strokeWidth={2.75} className="tomorrow-line-icon" aria-hidden="true" />}
+                <span><strong>{changeText(change.per1000)}</strong> voor 1000 liter ({label})</span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="tomorrow-source">Prijzen van de FOD Financiën. Bedragen incl. BTW.</p>
+      </div>
+    </div>
   );
 }
 
@@ -138,35 +262,41 @@ export default function MazoutDashboard() {
     if (customFrom && customTo) setRange({ from: customFrom, to: customTo });
   }
 
-  const today = history[history.length - 1];
-  const yesterday = history[history.length - 2] ?? today;
+  // De rij van morgen (enkel FOD-tarief, nog geen marktdata) zit wel in `history` voor de
+  // grafiek, maar het bord, de prijsopbouw en de kaarten gebruiken de rij van vandaag.
+  const { todayIdx, tomorrow } = splitDays(history, brusselsToday());
+  const today = todayIdx >= 0 ? history[todayIdx] : null;
+  const fodMax = lastKnown(history, todayIdx, "max");
+  const fodOnder2000 = lastKnown(history, todayIdx, "maxOnder2000");
+  const crude = lastKnown(history, todayIdx, "crude");
+  const wti = lastKnown(history, todayIdx, "wti");
 
-  if (loading || !today) {
+  if (loading || !today || fodMax.value == null) {
     return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
   }
 
   // Prijsopbouw wordt nu afgeleid van de échte cijfers van vandaag i.p.v. vaste,
   // verouderde bedragen — het totaal moet altijd exact gelijk zijn aan het bord bovenaan.
-  // Markt-component komt rechtstreeks uit de live HO=F-omrekening (today.crude).
+  // Markt-component komt rechtstreeks uit de live HO=F-omrekening (laatst bekende slotkoers).
   // Marge/accijnzen behouden hun onderlinge verhouding (bevestigd, zie opdrachtdocument §2.2),
-  // maar worden herschaald zodat (markt + marge + accijnzen) * 1.21 exact today.max oplevert.
-  const productMarkt = today.crude;
-  const subtotaalExclBtw = today.max / 1.21;
-  const margeEnAccijnzenTotaal = Math.max(subtotaalExclBtw - productMarkt, 0);
+  // maar worden herschaald zodat (markt + marge + accijnzen) * 1.21 exact de FOD-prijs oplevert.
+  const total = fodMax.value;
+  const productMarkt = crude.value;
+  const subtotaalExclBtw = total / 1.21;
+  const margeEnAccijnzenTotaal = Math.max(subtotaalExclBtw - (productMarkt ?? 0), 0);
   const MARGE_RATIO = 0.2 / (0.2 + 0.28); // oorspronkelijke verhouding: 0,20 marge / 0,28 accijnzen
   const distributieMarge = margeEnAccijnzenTotaal * MARGE_RATIO;
   const accijnzen = margeEnAccijnzenTotaal * (1 - MARGE_RATIO);
-  const btw = today.max - subtotaalExclBtw;
+  const btw = total - subtotaalExclBtw;
   const breakdown = [
     { label: "Productprijs/markt", value: productMarkt, color: "#8C6A3F" },
     { label: "Distributiemarge", value: distributieMarge, color: "#6E5A8C" },
     { label: "Accijnzen/energieheffing (incl. overige bijdragen)", value: accijnzen, color: "#B4472B" },
     { label: "BTW (21%)", value: btw, color: "#5B6E63" },
   ];
-  const total = today.max;
 
-  const deltaMax = today.max - yesterday.max;
-  const deltaCrude = today.crude - yesterday.crude;
+  const deltaMax = fodMax.value - fodMax.prev;
+  const deltaCrude = crude.value != null ? crude.value - crude.prev : null;
 
   return (
     <div className="wrap">
@@ -248,12 +378,38 @@ export default function MazoutDashboard() {
         footer { font-size: 11.5px; color: var(--ink-soft); border-top: 1px solid var(--hair); padding-top: 14px; line-height: 1.6; }
         .footer-link { color: var(--ink-soft); text-decoration: underline; }
         .footer-link:hover { color: var(--ink); }
+        /* Blok "morgen": tekstkleuren donker genoeg voor de lichte achtergrond (≥ 4.5:1). */
+        .tomorrow { --t-accent: #57544A; display: flex; gap: 16px; align-items: flex-start; background: #F4F1E8;
+          border: 1px solid var(--hair); border-left: 6px solid var(--t-accent); border-radius: 10px;
+          padding: 18px 20px; margin-bottom: 22px; }
+        .t-down { --t-accent: #2F6B45; }
+        .t-up { --t-accent: #93331A; }
+        .t-same, .t-mixed, .t-neutral { --t-accent: #57544A; }
+        .tomorrow-icon { flex-shrink: 0; width: 52px; height: 52px; border-radius: 50%; display: flex;
+          align-items: center; justify-content: center; background: var(--t-accent); color: #FFFFFF; }
+        .tomorrow-body { flex: 1; min-width: 0; }
+        .tomorrow-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(19px, 3.4vw, 24px);
+          line-height: 1.2; color: var(--t-accent); margin: 2px 0 6px; }
+        .tomorrow-when { font-size: 14px; color: var(--ink); margin: 0 0 10px; }
+        .tomorrow-lines { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px;
+          font-size: 14px; line-height: 1.45; color: var(--ink); }
+        .tomorrow-lines li { display: flex; align-items: flex-start; gap: 6px; }
+        .tomorrow-lines strong { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-variant-numeric: tabular-nums; }
+        .tomorrow-lines li[class] strong, .tomorrow-line-icon { color: var(--t-accent); }
+        .tomorrow-line-icon { flex-shrink: 0; margin-top: 2px; }
+        .tomorrow-source { font-size: 11.5px; color: var(--ink-soft); margin: 0; }
+        .tomorrow-unknown { font-size: 14px; color: var(--ink); margin: 0; }
+        @media (max-width: 480px) {
+          .tomorrow { padding: 14px; gap: 12px; }
+          .tomorrow-icon { width: 40px; height: 40px; }
+          .tomorrow-icon svg { width: 24px; height: 24px; }
+        }
       `}</style>
 
       <div className="container">
         <div className="eyebrow">
           <span>FOD/SPF Finance · dagelijkse maximumprijs</span>
-          <span>{new Date(today.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+          <span>{fmtIso(today.date, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
         </div>
 
         <h1>Belgische <span className="quote">"mazout"</span> prijzen &amp; trends</h1>
@@ -261,6 +417,8 @@ export default function MazoutDashboard() {
           Officiële maximumprijs per dag volgens FOD Financiën, met een onafhankelijke
           inschatting op basis van de internationale stookoliemarkt.
         </p>
+
+        <TomorrowBlock todayMax={fodMax.value} todayOnder2000={fodOnder2000.value} tomorrow={tomorrow} />
 
         {isMock && (
           <div className="mock-banner">
@@ -275,17 +433,17 @@ export default function MazoutDashboard() {
             <span>bron: FOD Economie</span>
           </div>
           <div className="board-digits">
-            <span>€ {today.max.toFixed(4)}</span>
+            <span>€ {fodMax.value.toFixed(4)}</span>
             <span className="unit">/ liter</span>
           </div>
           <div className="board-bottom">
             <span>t.o.v. vorige dag</span>
             <Delta value={deltaMax} />
           </div>
-          {today.maxOnder2000 != null && (
+          {fodOnder2000.value != null && (
             <div className="board-bottom" style={{ marginTop: 4 }}>
               <span style={{ opacity: 0.8 }}>Tarief &lt; 2000 L</span>
-              <span style={{ fontFamily: "IBM Plex Mono", fontSize: 13 }}>€ {today.maxOnder2000.toFixed(4)} / L</span>
+              <span style={{ fontFamily: "IBM Plex Mono", fontSize: 13 }}>€ {fodOnder2000.value.toFixed(4)} / L</span>
             </div>
           )}
         </div>
@@ -294,19 +452,19 @@ export default function MazoutDashboard() {
           <div className="card">
             <div className="card-num">01 — markt</div>
             <div className="card-title">Marktprijs (HO=F, omgerekend)</div>
-            <div className="card-value">{fmt(today.crude)}</div>
+            <div className="card-value">{fmt(crude.value)}</div>
             <Delta value={deltaCrude} onLight />
           </div>
           <div className="card">
             <div className="card-num">02 — officieel</div>
             <div className="card-title">Maximumprijs (FOD/SPF Finance)</div>
-            <div className="card-value">{fmt(today.max)}</div>
+            <div className="card-value">{fmt(fodMax.value)}</div>
             <Delta value={deltaMax} onLight />
           </div>
           <div className="card">
             <div className="card-num">03 — WTI</div>
             <div className="card-title">Ruwe olie (WTI)</div>
-            <div className="card-value">€{today.wti ? today.wti.toFixed(2) : "—"}<span style={{fontSize:12}}> USD/vat</span></div>
+            <div className="card-value">€{wti.value != null ? wti.value.toFixed(2) : "—"}<span style={{fontSize:12}}> USD/vat</span></div>
             <a
               href="https://www.usmarkets.nl/koersen/wti-olie"
               target="_blank"
@@ -324,7 +482,7 @@ export default function MazoutDashboard() {
             <span>per liter</span>
           </div>
           <div className="stackbar">
-            {breakdown.map((b) => (
+            {breakdown.filter((b) => b.value != null).map((b) => (
               <div key={b.label} style={{ width: `${(b.value / total) * 100}%`, background: b.color }} title={`${b.label}: ${fmt(b.value)}`} />
             ))}
           </div>
@@ -386,7 +544,7 @@ export default function MazoutDashboard() {
                 <CartesianGrid stroke="#C9C2AC" strokeDasharray="2 4" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#57544A" }} interval={Math.floor(history.length / 6)} axisLine={{ stroke: "#C9C2AC" }} tickLine={false} />
                 <YAxis tickFormatter={chartMode === "level" ? fmtShort : (v) => `${v}`} tick={{ fontSize: 11, fill: "#57544A" }} axisLine={false} tickLine={false} width={50} />
-                <Tooltip formatter={(v, name) => [chartMode === "level" ? fmt(v) : `${v} (basis 100)`, name]} contentStyle={{ background: "#1C1A16", border: "none", borderRadius: 6 }} itemStyle={{ fontSize: 12, color: "#E9E4D6" }} />
+                <Tooltip formatter={(v, name) => [v == null ? "—" : chartMode === "level" ? fmt(v) : `${v} (basis 100)`, name]} contentStyle={{ background: "#1C1A16", border: "none", borderRadius: 6 }} itemStyle={{ fontSize: 12, color: "#E9E4D6" }} />
                 <Line type="monotone" dataKey="max" name="FOD maximumprijs" stroke="#B4472B" strokeWidth={2} dot={false} connectNulls />
                 <Line type="monotone" dataKey="crude" name="HO=F (markt)" stroke="#5B6E63" strokeWidth={1.5} dot={false} connectNulls />
                 {chartMode === "index" && <Line type="monotone" dataKey="wti" name="Ruwe olie (WTI)" stroke="#F0A93B" strokeWidth={1.5} dot={false} strokeDasharray="4 3" connectNulls />}
@@ -417,7 +575,7 @@ export default function MazoutDashboard() {
                 <thead><tr><th>Datum</th><th>WTI</th><th>HO=F markt</th><th>FOD max</th></tr></thead>
                 <tbody>
                   {[...history].reverse().map((row) => (
-                    <tr key={row.label}><td>{row.label}</td><td>{row.wti?.toFixed(2)}</td><td>{row.crude.toFixed(4)}</td><td>{row.max.toFixed(4)}</td></tr>
+                    <tr key={row.date}><td>{row.label}</td><td>{row.wti?.toFixed(2) ?? "—"}</td><td>{row.crude?.toFixed(4) ?? "—"}</td><td>{row.max?.toFixed(4) ?? "—"}</td></tr>
                   ))}
                 </tbody>
               </table>
