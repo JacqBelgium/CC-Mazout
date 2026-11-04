@@ -2,10 +2,10 @@ name: Prijzen ophalen
 
 on:
   schedule:
-    # 19:00 UTC = ±21:00 Belgische tijd, na CME-settlement (±20:30 BE-tijd).
-    # Let op: vaste UTC-tijd, dus rond de wissel zomer/wintertijd schuift het
-    # Belgische lokale moment ~1 uur op — voor dit doel verwaarloosbaar.
-    - cron: "0 19 * * *"
+    # 21:00 UTC = 22:00/23:00 Belgische tijd, ruim na CME-settlement (±20:30 BE-tijd).
+    # GitHub start geplande runs vaak 1-3 uur later; het script dateert de data zelf
+    # (FOD-geldigheidsdatum, yfinance-slotkoersdag), dus een run na middernacht is geen probleem.
+    - cron: '0 21 * * *'
   workflow_dispatch:
     inputs:
       job:

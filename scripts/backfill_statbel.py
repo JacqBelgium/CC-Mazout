@@ -58,6 +58,8 @@ def main() -> None:
         prijs = fact.get("Prijs incl. BTW")
         if prijs is None:
             continue
+        # Statbel's "Dag" = geldigheidsdatum van het tarief, dezelfde datum als
+        # "valable à partir du" op de FOD-pagina (gecontroleerd: 05.11.2026 -> 1,5017).
         date_str = parse_statbel_day(fact["Dag"])
         row = by_date.setdefault(date_str, {})
         if product == PRODUCT_VANAF_2000:
@@ -76,10 +78,11 @@ def main() -> None:
                     INSERT INTO daily_prices (date, fod_max_vanaf2000_l, fod_max_onder2000_l, source)
                     VALUES (%s, %s, %s, 'statbel_backfill')
                     ON CONFLICT (date) DO UPDATE SET
-                        fod_max_vanaf2000_l = EXCLUDED.fod_max_vanaf2000_l,
-                        fod_max_onder2000_l = EXCLUDED.fod_max_onder2000_l
-                    -- Overschrijft bewust geen market_eur_l/wti/etc. als die al door de
-                    -- dagelijkse job gezet zijn — backfill vult alleen de FOD-kolommen.
+                        fod_max_vanaf2000_l = COALESCE(EXCLUDED.fod_max_vanaf2000_l, daily_prices.fod_max_vanaf2000_l),
+                        fod_max_onder2000_l = COALESCE(EXCLUDED.fod_max_onder2000_l, daily_prices.fod_max_onder2000_l)
+                    -- Overschrijft bewust de FOD-kolommen (corrigeert foutief gedateerde
+                    -- waarden en maakt ontbrekende dagen aan), maar nooit met NULL en nooit
+                    -- market_eur_l/wti/etc. — die blijven van de dagelijkse job.
                     """,
                     (date_str, prices.get("vanaf2000"), prices.get("onder2000")),
                 )
