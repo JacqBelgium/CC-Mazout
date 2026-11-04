@@ -324,7 +324,10 @@ export default function MazoutDashboard() {
         h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(28px, 4.2vw, 40px);
           letter-spacing: -0.01em; margin: 0 0 8px; }
         h1 .quote { color: var(--amber-dim); }
-        .subtitle { font-size: 14px; color: var(--ink-soft); line-height: 1.6; max-width: 560px; margin: 0 0 20px; }
+        .lead-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 17px; line-height: 1.35;
+          color: var(--ink); text-align: center; text-wrap: balance; max-width: 560px; margin: 4px auto 6px; }
+        .subtitle { font-size: 14px; font-weight: 400; color: var(--ink-soft); line-height: 1.6; max-width: 560px;
+          text-align: center; text-wrap: balance; margin: 0 auto 20px; }
         .mock-banner { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; background: #EAD9A0;
           border: 1px solid #C9A94A; color: #5A4419; padding: 8px 12px; border-radius: 6px; margin-bottom: 20px; }
         .board { background: linear-gradient(180deg, var(--board), var(--board-2)); border-radius: 10px;
@@ -420,9 +423,10 @@ export default function MazoutDashboard() {
         </div>
 
         <h1>Belgische <span className="quote">"mazout"</span> prijzen &amp; trends</h1>
+        <h2 className="lead-title">Zie vandaag al waar de mazoutprijs van morgen naartoe gaat.</h2>
         <p className="subtitle">
-          Officiële maximumprijs per dag volgens FOD Financiën, met een onafhankelijke
-          inschatting op basis van de internationale stookoliemarkt.
+          De FOD Financiën publiceert de maximumprijs voor morgen al vandaag. Hier zie je meteen
+          of hij stijgt of daalt, samen met de beweging van de stookoliemarkt.
         </p>
 
         <TomorrowBlock todayMax={fodMax.value} todayOnder2000={fodOnder2000.value} tomorrow={tomorrow} />
