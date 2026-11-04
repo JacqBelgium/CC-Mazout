@@ -255,21 +255,28 @@ export default function MazoutDashboard() {
   const [chartMode, setChartMode] = useState("index");
 
   const isCustomMode = typeof range === "object";
-  const { rows: history, loading, isMock } = useHistory(range);
+  // Grafiek + ruwe data volgen de gekozen periode...
+  const { rows: history, loading: historyLoading, isMock: historyIsMock } = useHistory(range);
+  // ...maar het pijlblok, het bord, de kaarten en de prijsopbouw gebruiken altijd een vaste,
+  // recente dataset — anders verdwijnt "morgen" zodra de gekozen periode vóór morgen eindigt.
+  // 7 dagen volstaat om over weekend/feestdag heen de laatst bekende marktkoers te vinden.
+  const { rows: recent, loading: recentLoading, isMock: recentIsMock } = useHistory(7);
+  const loading = historyLoading || recentLoading;
+  const isMock = historyIsMock || recentIsMock;
   const indexedHistory = useMemo(() => indexed(history, ["wti", "crude", "max"]), [history]);
 
   function applyCustomRange() {
     if (customFrom && customTo) setRange({ from: customFrom, to: customTo });
   }
 
-  // De rij van morgen (enkel FOD-tarief, nog geen marktdata) zit wel in `history` voor de
+  // De rij van morgen (enkel FOD-tarief, nog geen marktdata) zit wel in de data voor de
   // grafiek, maar het bord, de prijsopbouw en de kaarten gebruiken de rij van vandaag.
-  const { todayIdx, tomorrow } = splitDays(history, brusselsToday());
-  const today = todayIdx >= 0 ? history[todayIdx] : null;
-  const fodMax = lastKnown(history, todayIdx, "max");
-  const fodOnder2000 = lastKnown(history, todayIdx, "maxOnder2000");
-  const crude = lastKnown(history, todayIdx, "crude");
-  const wti = lastKnown(history, todayIdx, "wti");
+  const { todayIdx, tomorrow } = splitDays(recent, brusselsToday());
+  const today = todayIdx >= 0 ? recent[todayIdx] : null;
+  const fodMax = lastKnown(recent, todayIdx, "max");
+  const fodOnder2000 = lastKnown(recent, todayIdx, "maxOnder2000");
+  const crude = lastKnown(recent, todayIdx, "crude");
+  const wti = lastKnown(recent, todayIdx, "wti");
 
   if (loading || !today || fodMax.value == null) {
     return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
