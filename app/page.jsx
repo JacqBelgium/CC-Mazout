@@ -169,6 +169,8 @@ function indexed(history, keys) {
 }
 
 const fmt = (v) => (v == null ? "—" : `€ ${v.toFixed(4)} / L`);
+// Zelfde tekst als fmt, maar met niet-afbrekende spaties: bedrag en eenheid blijven samen.
+const fmtNoBreak = (v) => fmt(v).replace(/ /g, " ");
 const fmtShort = (v) => `€${v.toFixed(2)}`;
 const fmtEuro2 = (v) => v.toLocaleString("nl-BE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtEuro4 = (v) => v.toLocaleString("nl-BE", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -377,11 +379,13 @@ export default function MazoutDashboard() {
         .section-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; }
         .stackbar { display: flex; width: 100%; height: 28px; border-radius: 5px; overflow: hidden; margin-bottom: 16px; border: 1px solid var(--hair); }
         .breakdown-list { display: flex; flex-direction: column; gap: 8px; }
-        .breakdown-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 7px 0; border-bottom: 1px dashed var(--hair); }
+        .breakdown-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; padding: 7px 0; border-bottom: 1px dashed var(--hair); }
         .breakdown-row:last-child { border-bottom: none; font-weight: 700; }
-        .breakdown-label { display: flex; align-items: center; gap: 8px; }
+        /* Enkel de omschrijving mag afbreken; het bedrag + eenheid blijft samen rechts staan. */
+        .breakdown-label { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
         .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-        .breakdown-value { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+        .breakdown-value { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums;
+          white-space: nowrap; flex-shrink: 0; text-align: right; margin-left: auto; }
         .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .seg { display: flex; border: 1px solid var(--hair); border-radius: 6px; overflow: hidden; }
         .seg button { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 6px 12px; background: transparent; border: none; cursor: pointer; color: var(--ink-soft); }
@@ -517,12 +521,12 @@ export default function MazoutDashboard() {
             {breakdown.map((b) => (
               <div className="breakdown-row" key={b.label}>
                 <span className="breakdown-label"><span className="swatch" style={{ background: b.color }} />{b.label}</span>
-                <span className="breakdown-value">{fmt(b.value)}</span>
+                <span className="breakdown-value">{fmtNoBreak(b.value)}</span>
               </div>
             ))}
             <div className="breakdown-row">
-              <span>Officiële FOD maximumprijs</span>
-              <span className="breakdown-value">{fmt(total)}</span>
+              <span className="breakdown-label">Officiële FOD maximumprijs</span>
+              <span className="breakdown-value">{fmtNoBreak(total)}</span>
             </div>
           </div>
         </div>
