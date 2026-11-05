@@ -197,17 +197,24 @@ const TOMORROW_TITLES = {
 const DIR_ICONS = { down: ArrowDown, up: ArrowUp, same: ArrowRight };
 
 // Geen +/− teken: "meer"/"minder" geeft de richting al aan.
+// Getal + eenheid (en de tariefaanduiding) breken nooit af: niet-afbrekende spaties
+// in een nowrap-element. Enkel de gewone woorden ertussen mogen naar een nieuwe regel.
+const NoWrap = ({ children }) => <span className="nowrap">{children}</span>;
+
 function ChangeLine({ change, label }) {
   const rounded = Math.round(Math.abs(change.per1000) * 100) / 100;
+  const liters = <NoWrap>{"1000 liter"}</NoWrap>;
+  const tariff = <NoWrap>({label})</NoWrap>;
+  const toPrice = <NoWrap>{`${fmtEuro4(change.to)} €/l`}</NoWrap>;
   if (rounded === 0) {
     return (
-      <span><strong>geen verschil</strong> voor 1000 liter ({label}), {fmtEuro4(change.to)} €/l</span>
+      <span><strong>geen verschil</strong> voor {liters} {tariff}, {toPrice}</span>
     );
   }
   return (
     <span>
-      <strong>{fmtEuro2(rounded)} € {change.per1000 < 0 ? "minder" : "meer"}</strong> voor 1000 liter ({label}),
-      van {fmtEuro4(change.from)} naar {fmtEuro4(change.to)} €/l
+      <strong><NoWrap>{`${fmtEuro2(rounded)} €`}</NoWrap> {change.per1000 < 0 ? "minder" : "meer"}</strong> voor {liters} {tariff},
+      van <NoWrap>{fmtEuro4(change.from)}</NoWrap> naar {toPrice}
     </span>
   );
 }
@@ -216,8 +223,8 @@ function ChangeLine({ change, label }) {
 function TomorrowBlock({ todayMax, todayOnder2000, tomorrow }) {
   const changes = tomorrow
     ? [
-        { label: "≥ 2000 l", change: tariffChange(todayMax, tomorrow.max) },
-        { label: "< 2000 l", change: tariffChange(todayOnder2000, tomorrow.maxOnder2000) },
+        { label: "≥ 2000 l", change: tariffChange(todayMax, tomorrow.max) },
+        { label: "< 2000 l", change: tariffChange(todayOnder2000, tomorrow.maxOnder2000) },
       ].filter((c) => c.change)
     : [];
 
@@ -428,6 +435,7 @@ export default function MazoutDashboard() {
         .tomorrow-lines li[class] strong, .tomorrow-line-icon { color: var(--t-accent); }
         .tomorrow-line-icon { flex-shrink: 0; margin-top: 2px; }
         .tomorrow-source { font-size: 11.5px; color: var(--ink-soft); margin: 0; }
+        .tomorrow .nowrap { white-space: nowrap; }
         .tomorrow-unknown { font-size: 14px; color: var(--ink); margin: 0; }
         @media (max-width: 480px) {
           .tomorrow { padding: 14px; gap: 12px; }
