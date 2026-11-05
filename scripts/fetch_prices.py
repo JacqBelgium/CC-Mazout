@@ -11,13 +11,18 @@ Haalt op:
 
 LET OP: de eenmalige historische FOD-data komt uit scripts/backfill_statbel.py
 (Statbel-databank) — dit script vult enkel de nieuwste dag aan, dagelijks.
+
+Gebruik:
+    python scripts/fetch_prices.py             # FOD + marktdata (avondrun)
+    python scripts/fetch_prices.py --fod-only  # enkel FOD-tarief (ochtendruns), geen yfinance
 """
 
+import argparse
 import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 
 import psycopg2
 import requests
@@ -110,21 +115,33 @@ def fetch_fod_prices() -> tuple[date, float, float]:
     return geldig_vanaf, vanaf_2000, onder_2000
 
 
-def main() -> None:
+def main(fod_only: bool = False) -> None:
+    run_utc = datetime.now(timezone.utc)
+
     # FOD eerst: als de pagina niet te parsen valt, stoppen we vóór er iets geschreven wordt.
     fod_datum, fod_vanaf_2000, fod_onder_2000 = fetch_fod_prices()
+    # Altijd loggen, ook als een latere stap faalt: zo is in de Actions-log te zien
+    # vanaf welk uur FOD het tarief van morgen publiceert.
+    print(
+        f"[fetch_prices] run {run_utc:%Y-%m-%d %H:%M} UTC ({'alleen FOD' if fod_only else 'volledig'}) | "
+        f"FOD geldig vanaf {fod_datum}: >=2000L={fod_vanaf_2000:.4f} EUR/L, "
+        f"<2000L={fod_onder_2000:.4f} EUR/L"
+    )
 
-    wti_closes = fetch_with_retry("CL=F")            # USD/vat
-    ho_closes = fetch_with_retry("HO=F")              # USD/gallon
-    eur_usd_closes = fetch_with_retry("EURUSD=X")     # EUR/USD
+    markt = None
+    if not fod_only:
+        wti_closes = fetch_with_retry("CL=F")            # USD/vat
+        ho_closes = fetch_with_retry("HO=F")              # USD/gallon
+        eur_usd_closes = fetch_with_retry("EURUSD=X")     # EUR/USD
 
-    # Marktdatum = dag van de laatste HO=F-slotkoers (de basis van market_eur_l), niet de
-    # rundatum. WTI en EUR/USD nemen we op die dag, of de laatst bekende koers ervoor.
-    markt_datum = ho_closes.index[-1]
-    ho = float(ho_closes.iloc[-1])
-    wti = float(wti_closes[wti_closes.index <= markt_datum].iloc[-1])
-    eur_usd = float(eur_usd_closes[eur_usd_closes.index <= markt_datum].iloc[-1])
-    ho_eur_per_liter = (ho / eur_usd) / GALLON_TO_LITER
+        # Marktdatum = dag van de laatste HO=F-slotkoers (de basis van market_eur_l), niet de
+        # rundatum. WTI en EUR/USD nemen we op die dag, of de laatst bekende koers ervoor.
+        markt_datum = ho_closes.index[-1]
+        ho = float(ho_closes.iloc[-1])
+        wti = float(wti_closes[wti_closes.index <= markt_datum].iloc[-1])
+        eur_usd = float(eur_usd_closes[eur_usd_closes.index <= markt_datum].iloc[-1])
+        ho_eur_per_liter = (ho / eur_usd) / GALLON_TO_LITER
+        markt = (markt_datum, wti, ho, eur_usd, ho_eur_per_liter)
 
     # Twee aparte upserts: elke kolomgroep werkt enkel zijn eigen kolommen bij en
     # overschrijft nooit een bestaande waarde met NULL (COALESCE). Een rij mag dus
@@ -132,20 +149,21 @@ def main() -> None:
     conn = psycopg2.connect(os.environ["DATABASE_URL"].strip())
     try:
         with conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO daily_prices
-                    (date, wti_usd_bbl, ho_usd_gal, eur_usd, market_eur_l, source)
-                VALUES (%s, %s, %s, %s, %s, 'petrolprices_daily')
-                ON CONFLICT (date) DO UPDATE SET
-                    wti_usd_bbl  = COALESCE(EXCLUDED.wti_usd_bbl,  daily_prices.wti_usd_bbl),
-                    ho_usd_gal   = COALESCE(EXCLUDED.ho_usd_gal,   daily_prices.ho_usd_gal),
-                    eur_usd      = COALESCE(EXCLUDED.eur_usd,      daily_prices.eur_usd),
-                    market_eur_l = COALESCE(EXCLUDED.market_eur_l, daily_prices.market_eur_l),
-                    fetched_at   = now()
-                """,
-                (markt_datum, wti, ho, eur_usd, ho_eur_per_liter),
-            )
+            if markt is not None:
+                cur.execute(
+                    """
+                    INSERT INTO daily_prices
+                        (date, wti_usd_bbl, ho_usd_gal, eur_usd, market_eur_l, source)
+                    VALUES (%s, %s, %s, %s, %s, 'petrolprices_daily')
+                    ON CONFLICT (date) DO UPDATE SET
+                        wti_usd_bbl  = COALESCE(EXCLUDED.wti_usd_bbl,  daily_prices.wti_usd_bbl),
+                        ho_usd_gal   = COALESCE(EXCLUDED.ho_usd_gal,   daily_prices.ho_usd_gal),
+                        eur_usd      = COALESCE(EXCLUDED.eur_usd,      daily_prices.eur_usd),
+                        market_eur_l = COALESCE(EXCLUDED.market_eur_l, daily_prices.market_eur_l),
+                        fetched_at   = now()
+                    """,
+                    markt,
+                )
             cur.execute(
                 """
                 INSERT INTO daily_prices
@@ -162,17 +180,25 @@ def main() -> None:
     finally:
         conn.close()
 
-    print(
-        f"[fetch_prices] markt {markt_datum}: WTI={wti:.2f} USD/vat, HO=F={ho:.4f} USD/gal, "
-        f"EUR/USD={eur_usd:.4f}, markt={ho_eur_per_liter:.4f} EUR/L | "
-        f"FOD geldig vanaf {fod_datum}: >=2000L={fod_vanaf_2000:.4f} EUR/L, "
-        f"<2000L={fod_onder_2000:.4f} EUR/L"
-    )
+    if markt is not None:
+        markt_datum, wti, ho, eur_usd, ho_eur_per_liter = markt
+        print(
+            f"[fetch_prices] markt {markt_datum}: WTI={wti:.2f} USD/vat, HO=F={ho:.4f} USD/gal, "
+            f"EUR/USD={eur_usd:.4f}, markt={ho_eur_per_liter:.4f} EUR/L"
+        )
+    print("[fetch_prices] Klaar.")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Haalt de FOD-mazoutprijs (en marktdata) op.")
+    parser.add_argument(
+        "--fod-only",
+        action="store_true",
+        help="enkel de FOD-pagina ophalen en de FOD-kolommen schrijven (geen yfinance/marktdata)",
+    )
+    args = parser.parse_args()
     try:
-        main()
+        main(fod_only=args.fod_only)
     except Exception as exc:  # noqa: BLE001
         print(f"[fetch_prices] FOUT: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -6,6 +6,14 @@ on:
     # GitHub start geplande runs vaak 1-3 uur later; het script dateert de data zelf
     # (FOD-geldigheidsdatum, yfinance-slotkoersdag), dus een run na middernacht is geen probleem.
     - cron: '0 21 * * *'
+    # Alleen-FOD-runs: FOD publiceert het tarief van morgen in de loop van de ochtend.
+    # Meerdere pogingen zodat het nieuwe tarief snel op de site staat, ook als GitHub
+    # een run vertraagt. De stap kiest op github.event.schedule — deze strings moeten
+    # exact overeenkomen met de if-voorwaarden hieronder.
+    - cron: '0 5 * * *'
+    - cron: '30 6 * * *'
+    - cron: '0 8 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       job:
@@ -14,6 +22,7 @@ on:
         default: daily
         options:
           - daily
+          - fod_only
           - backfill_statbel
           - backfill_yfinance
           - apply_schema
@@ -42,11 +51,23 @@ jobs:
           DB_URL=$(printf '%s' "${{ secrets.DATABASE_URL_UNPOOLED }}" | tr -d '\n\r')
           psql "$DB_URL" -f sql/schema.sql
 
-      - name: Dagelijkse prijzen ophalen
-        if: github.event_name == 'schedule' || github.event.inputs.job == 'daily' || github.event.inputs.job == ''
+      # Let op: bij een schedule-event is github.event.inputs null, en `null == ''` is in
+      # GitHub-expressies waar. Daarom de lege-input-check expliciet beperken tot handmatige runs.
+      - name: Dagelijkse prijzen ophalen (FOD + markt)
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule == '0 21 * * *') ||
+          (github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'daily' || github.event.inputs.job == ''))
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/fetch_prices.py
+
+      - name: Tarief van morgen ophalen (alleen FOD)
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule != '0 21 * * *') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'fod_only')
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/fetch_prices.py --fod-only
 
       - name: Eenmalige historische backfill (Statbel)
         if: github.event.inputs.job == 'backfill_statbel'
