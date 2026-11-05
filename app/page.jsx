@@ -54,7 +54,12 @@ const SAME_THRESHOLD = 0.0005;
 function tariffChange(todayVal, tomorrowVal) {
   if (todayVal == null || tomorrowVal == null) return null;
   const diff = tomorrowVal - todayVal;
-  return { per1000: diff * 1000, dir: Math.abs(diff) < SAME_THRESHOLD ? "same" : diff < 0 ? "down" : "up" };
+  return {
+    from: todayVal,
+    to: tomorrowVal,
+    per1000: diff * 1000,
+    dir: Math.abs(diff) < SAME_THRESHOLD ? "same" : diff < 0 ? "down" : "up",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +171,7 @@ function indexed(history, keys) {
 const fmt = (v) => (v == null ? "—" : `€ ${v.toFixed(4)} / L`);
 const fmtShort = (v) => `€${v.toFixed(2)}`;
 const fmtEuro2 = (v) => v.toLocaleString("nl-BE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtEuro4 = (v) => v.toLocaleString("nl-BE", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 
 function Delta({ value, onLight }) {
   if (value == null || Number.isNaN(value)) return null;
@@ -188,10 +194,20 @@ const TOMORROW_TITLES = {
 };
 const DIR_ICONS = { down: ArrowDown, up: ArrowUp, same: ArrowRight };
 
-function changeText(per1000) {
-  const rounded = Math.round(Math.abs(per1000) * 100) / 100;
-  if (rounded === 0) return "geen verschil";
-  return per1000 < 0 ? `−${fmtEuro2(rounded)} € minder` : `+${fmtEuro2(rounded)} € meer`;
+// Geen +/− teken: "meer"/"minder" geeft de richting al aan.
+function ChangeLine({ change, label }) {
+  const rounded = Math.round(Math.abs(change.per1000) * 100) / 100;
+  if (rounded === 0) {
+    return (
+      <span><strong>geen verschil</strong> voor 1000 liter ({label}), {fmtEuro4(change.to)} €/l</span>
+    );
+  }
+  return (
+    <span>
+      <strong>{fmtEuro2(rounded)} € {change.per1000 < 0 ? "minder" : "meer"}</strong> voor 1000 liter ({label}),
+      van {fmtEuro4(change.from)} naar {fmtEuro4(change.to)} €/l
+    </span>
+  );
 }
 
 // Blok "morgen": vergelijkt het FOD-tarief van morgen met dat van vandaag, per tarief.
@@ -235,7 +251,7 @@ function TomorrowBlock({ todayMax, todayOnder2000, tomorrow }) {
             return (
               <li key={label} className={overall === "mixed" ? `t-${change.dir}` : undefined}>
                 {LineIcon && <LineIcon size={16} strokeWidth={2.75} className="tomorrow-line-icon" aria-hidden="true" />}
-                <span><strong>{changeText(change.per1000)}</strong> voor 1000 liter ({label})</span>
+                <ChangeLine change={change} label={label} />
               </li>
             );
           })}
