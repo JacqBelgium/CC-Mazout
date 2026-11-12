@@ -69,6 +69,18 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/fetch_prices.py --fod-only
 
+      # Statbel levert de FOD-maximumprijs per geldigheidsdag (ook voor morgen) en vult zo
+      # de dagen aan waarvoor de FOD-pagina geen nieuwe datum toont (weekend, feestdagen).
+      # Draait na elke geplande run (21:00 en de ochtend-runs). Een storing bij Statbel mag
+      # de run niet laten falen — de FOD-data van de stap hierboven is dan al weggeschreven.
+      # !cancelled(): ook aanvullen als de FOD-stap zelf faalde.
+      - name: FOD-prijzen aanvullen via Statbel
+        if: ${{ !cancelled() && github.event_name == 'schedule' }}
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/backfill_statbel.py
+
       - name: Eenmalige historische backfill (Statbel)
         if: github.event.inputs.job == 'backfill_statbel'
         env:

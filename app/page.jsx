@@ -33,7 +33,8 @@ function splitDays(history, todayIso) {
     if (row.date <= todayIso) todayIdx = i;
   });
   const tomorrowIso = addDays(todayIso, 1);
-  const tomorrow = history.find((row) => row.date === tomorrowIso && row.max != null) ?? null;
+  const tomorrow =
+    history.find((row) => row.date === tomorrowIso && (row.max != null || row.maxOnder2000 != null)) ?? null;
   return { todayIdx, tomorrow };
 }
 
@@ -46,6 +47,16 @@ function lastKnown(rows, upTo, key) {
     if (rows[i][key] != null) found.push(rows[i][key]);
   }
   return { value: found[0] ?? null, prev: found[1] ?? found[0] ?? null };
+}
+
+// Zelfde als lastKnown, maar zoekt eerst in `primary` en valt terug op `fallback` (bv. de
+// langere historiek van de grafiek) als er daar geen waarde op of vóór vandaag te vinden is.
+// Een FOD-tarief blijft geldig tot er een nieuw komt: op weekends en feestdagen publiceert de
+// FOD niets, en dan tonen we het laatst gepubliceerde tarief i.p.v. een leeg bord.
+function lastKnownAny(primary, fallback, todayIso, key) {
+  const fromPrimary = lastKnown(primary, splitDays(primary, todayIso).todayIdx, key);
+  if (fromPrimary.value != null) return fromPrimary;
+  return lastKnown(fallback, splitDays(fallback, todayIso).todayIdx, key);
 }
 
 // Verschil kleiner dan een halve tiende cent per liter = "gelijk".
@@ -231,7 +242,9 @@ function TomorrowBlock({ todayMax, todayOnder2000, tomorrow }) {
   if (changes.length === 0) {
     return (
       <div className="tomorrow t-neutral">
-        <p className="tomorrow-unknown">De prijs van morgen is nog niet bekend.</p>
+        <p className="tomorrow-unknown">
+          De prijs van morgen is nog niet gepubliceerd. De FOD publiceert op werkdagen, meestal in de voormiddag.
+        </p>
       </div>
     );
   }
@@ -284,8 +297,9 @@ export default function MazoutDashboard() {
   const { rows: history, loading: historyLoading, isMock: historyIsMock } = useHistory(range);
   // ...maar het pijlblok, het bord, de kaarten en de prijsopbouw gebruiken altijd een vaste,
   // recente dataset — anders verdwijnt "morgen" zodra de gekozen periode vóór morgen eindigt.
-  // 7 dagen volstaat om over weekend/feestdag heen de laatst bekende marktkoers te vinden.
-  const { rows: recent, loading: recentLoading, isMock: recentIsMock } = useHistory(7);
+  // 14 rijen overbrugt ruim een weekend + feestdagen om de laatst bekende FOD-prijs en
+  // marktkoers te vinden; lukt dat toch niet, dan zoeken we verder in de grafiekdata.
+  const { rows: recent, loading: recentLoading, isMock: recentIsMock } = useHistory(14);
   const loading = historyLoading || recentLoading;
   const isMock = historyIsMock || recentIsMock;
   const indexedHistory = useMemo(() => indexed(history, ["wti", "crude", "max"]), [history]);
@@ -296,15 +310,27 @@ export default function MazoutDashboard() {
 
   // De rij van morgen (enkel FOD-tarief, nog geen marktdata) zit wel in de data voor de
   // grafiek, maar het bord, de prijsopbouw en de kaarten gebruiken de rij van vandaag.
-  const { todayIdx, tomorrow } = splitDays(recent, brusselsToday());
+  // Rij van vandaag zonder FOD-prijs (null)? Dan geldt het laatst gepubliceerde tarief —
+  // zowel voor het bord als voor de vergelijking vandaag/morgen.
+  const todayIso = brusselsToday();
+  const { todayIdx, tomorrow } = splitDays(recent, todayIso);
   const today = todayIdx >= 0 ? recent[todayIdx] : null;
-  const fodMax = lastKnown(recent, todayIdx, "max");
-  const fodOnder2000 = lastKnown(recent, todayIdx, "maxOnder2000");
-  const crude = lastKnown(recent, todayIdx, "crude");
-  const wti = lastKnown(recent, todayIdx, "wti");
+  const fodMax = lastKnownAny(recent, history, todayIso, "max");
+  const fodOnder2000 = lastKnownAny(recent, history, todayIso, "maxOnder2000");
+  const crude = lastKnownAny(recent, history, todayIso, "crude");
+  const wti = lastKnownAny(recent, history, todayIso, "wti");
 
-  if (loading || !today || fodMax.value == null) {
+  if (loading) {
     return <div className="wrap"><p style={{ padding: 24 }}>Prijzen laden…</p></div>;
+  }
+  if (!today || fodMax.value == null) {
+    return (
+      <div className="wrap">
+        <p style={{ padding: 24 }}>
+          Er is momenteel geen FOD-maximumprijs beschikbaar. Probeer het later opnieuw.
+        </p>
+      </div>
+    );
   }
 
   // Prijsopbouw wordt nu afgeleid van de échte cijfers van vandaag i.p.v. vaste,
