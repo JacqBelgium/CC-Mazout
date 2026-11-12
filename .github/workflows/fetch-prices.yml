@@ -34,6 +34,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +78,7 @@ jobs:
       - name: FOD-prijzen aanvullen via Statbel
         if: ${{ !cancelled() && github.event_name == 'schedule' }}
         continue-on-error: true
+        timeout-minutes: 3
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/backfill_statbel.py

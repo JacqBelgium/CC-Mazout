@@ -44,10 +44,38 @@ def parse_statbel_day(dag: str):
     return f"{jaar:04d}-{MAAND_NL[maand]:02d}-{dd:02d}"
 
 
+REQUEST_TIMEOUT = 30  # seconden (verbinden én lezen) — een hangende Statbel mag de run niet blokkeren
+
+
+def fetch_statbel_facts():
+    """Haalt de Statbel-data op. Bij timeout of fout: duidelijke melding en stoppen,
+    zonder ooit een databaseverbinding te openen."""
+    try:
+        resp = requests.get(STATBEL_JSON_URL, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()["facts"]
+    except requests.exceptions.Timeout:
+        print(
+            f"[backfill_statbel] Statbel antwoordde niet binnen {REQUEST_TIMEOUT} s — "
+            "gestopt, database niet aangeraakt.",
+            file=sys.stderr,
+        )
+    except requests.exceptions.RequestException as exc:
+        print(
+            f"[backfill_statbel] Statbel niet bereikbaar ({exc}) — gestopt, database niet aangeraakt.",
+            file=sys.stderr,
+        )
+    except (ValueError, KeyError) as exc:
+        print(
+            f"[backfill_statbel] Onverwacht antwoord van Statbel ({exc!r}) — "
+            "gestopt, database niet aangeraakt.",
+            file=sys.stderr,
+        )
+    sys.exit(1)
+
+
 def main() -> None:
-    resp = requests.get(STATBEL_JSON_URL, timeout=60)
-    resp.raise_for_status()
-    facts = resp.json()["facts"]
+    facts = fetch_statbel_facts()
 
     # Verzamel per dag de twee tarieven die ons interesseren
     by_date = {}
